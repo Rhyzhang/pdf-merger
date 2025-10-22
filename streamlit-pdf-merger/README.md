@@ -13,34 +13,35 @@ streamlit-pdf-merger
 
 ## Setup Instructions
 
-To set up the project, follow these steps:
+To set up and run this project, please follow these steps:
 
-1. **Create a new Conda environment:**
-   ```bash
-   conda create --name pdf python=3.9
-   ```
+1.  **Create the Conda Environment**:
+    Open your terminal and run the following command from the root of the repository to create a new Conda environment from the `environment.yml` file. This file contains all the necessary dependencies.
 
-2. **Activate the environment:**
-   ```bash
-   conda activate pdf
-   ```
+    ```bash
+    conda env create -f ../environment.yml
+    ```
 
-3. **Install the required packages:**
-   ```bash
-   pip install streamlit PyPDF2
-   ```
+2.  **Activate the Environment**:
+    Once the environment is created, activate it using:
 
-4. **Run the Streamlit application:**
-   ```bash
-   streamlit run app.py
-   ```
+    ```bash
+    conda activate pdf
+    ```
+
+3.  **Run the Application**:
+    With the environment activated, you can start the Streamlit application by running:
+
+    ```bash
+    streamlit run app.py
+    ```
 
 ## Exporting the Environment
 
-To export the Conda environment into the repository, use the following command:
+If you make changes to the environment, such as adding new packages, you should update the `environment.yml` file. To export the current Conda environment, use the following command from within the `streamlit-pdf-merger` directory:
 
 ```bash
-conda env export > environment.yml
+conda env export --name pdf > ../environment.yml
 ```
 
 This will create an `environment.yml` file that can be used to recreate the environment later.
