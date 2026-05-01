@@ -3,8 +3,37 @@ from PyPDF2 import PdfReader, PdfWriter
 from PIL import Image
 import io
 import base64
-
+import tempfile
+import subprocess
+import os
+import fitz # PyMuPDF
 # --- HELPER FUNCTIONS ---
+
+def latex_to_pdf(latex_code):
+    with tempfile.TemporaryDirectory() as temp_dir:
+        tex_file_path = os.path.join(temp_dir, "document.tex")
+        with open(tex_file_path, "w", encoding="utf-8") as tex_file:
+            tex_file.write(latex_code)
+            
+        try:
+            process = subprocess.run(
+                ["pdflatex", "-interaction=nonstopmode", "document.tex"],
+                cwd=temp_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False
+            )
+            
+            pdf_file_path = os.path.join(temp_dir, "document.pdf")
+            if os.path.exists(pdf_file_path):
+                with open(pdf_file_path, "rb") as pdf_file:
+                    out_pdf = io.BytesIO(pdf_file.read())
+                out_pdf.seek(0)
+                return out_pdf, process.stdout.decode()
+            else:
+                return None, process.stdout.decode()
+        except FileNotFoundError:
+            return None, "Error: pdflatex not found. Please install TeX Live or MiKTeX on your system."
 
 def merge_pdfs(pdf1, pdf2):
     pdf_writer = PdfWriter()
@@ -60,12 +89,31 @@ def display_pdf(pdf_stream, height=600):
     pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="{height}" type="application/pdf"></iframe>'
     st.markdown(pdf_display, unsafe_allow_html=True)
 
+def redact_pdf(pdf_stream, text_to_redact_list):
+    """Redacts standard text from a PDF."""
+    pdf_bytes = pdf_stream.read()
+    pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
+    
+    for page in pdf_document:
+        for text in text_to_redact_list:
+            if text.strip():
+                text_instances = page.search_for(text)
+                for inst in text_instances:
+                    page.add_redact_annot(inst, fill=(0, 0, 0))
+        page.apply_redactions()
+        
+    out_pdf = io.BytesIO()
+    pdf_document.save(out_pdf)
+    pdf_document.close()
+    out_pdf.seek(0)
+    return out_pdf
+
 # --- APP UI ---
 
 st.set_page_config(page_title="PDF Toolkit", layout="wide") # Switched to wide layout to better accommodate previews
 
 st.sidebar.title("PDF Toolkit")
-tool = st.sidebar.radio("Select a Tool:", ["Merge PDFs", "PNG to PDF", "Crop PDF margins"])
+tool = st.sidebar.radio("Select a Tool:", ["Merge PDFs", "PNG to PDF", "Crop PDF margins", "LaTeX to PDF", "Redact PDF"])
 
 # --- TOOL 1: MERGER ---
 if tool == "Merge PDFs":
@@ -167,3 +215,74 @@ elif tool == "Crop PDF margins":
                     file_name="cropped.pdf",
                     mime="application/pdf"
                 )
+
+# --- TOOL 4: LATEX TO PDF ---
+elif tool == "LaTeX to PDF":
+    st.title("LaTeX to PDF Converter")
+    st.write("Enter your LaTeX code below to compile it into a PDF Document.")
+    
+    default_latex = r'''\documentclass{article}
+\begin{document}
+Hello World!
+\end{document}'''
+    
+    latex_code = st.text_area("LaTeX Source Code", value=default_latex, height=300)
+    
+    if st.button("Compile to PDF"):
+        if latex_code.strip():
+            with st.spinner("Compiling LaTeX to PDF..."):
+                pdf_stream, logs = latex_to_pdf(latex_code)
+                
+            if pdf_stream:
+                st.success("Successfully compiled LaTeX to PDF! Scroll down to preview.")
+                
+                st.download_button(
+                    label="Download Compiled PDF",
+                    data=pdf_stream,
+                    file_name="compiled.pdf",
+                    mime="application/pdf"
+                )
+                
+                st.subheader("Generated PDF Preview")
+                display_pdf(pdf_stream)
+            else:
+                st.error("Failed to compile LaTeX. See the log details below.")
+                with st.expander("Compilation Logs"):
+                    st.code(logs, language="text")
+        else:
+            st.error("Please enter some LaTeX code.")
+
+# --- TOOL 5: REDACT PDF ---
+elif tool == "Redact PDF":
+    st.title("PDF Redactor")
+    st.write("Upload a PDF and specify words or phrases to be permanently redacted (blacked out).")
+    
+    pdf_to_redact = st.file_uploader("Choose a PDF file to redact", type="pdf")
+    redact_text = st.text_area("Enter text to redact (one phrase per line)")
+    
+    if pdf_to_redact:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("Original PDF Preview")
+            pdf_bytes = io.BytesIO(pdf_to_redact.getvalue())
+            display_pdf(pdf_bytes, height=500)
+            
+        with col2:
+            st.subheader("Redacted PDF Preview")
+            if st.button("Redact Document"):
+                if redact_text.strip():
+                    text_list = [t.strip() for t in redact_text.split('\n') if t.strip()]
+                    with st.spinner("Applying redactions..."):
+                        pdf_to_redact.seek(0)
+                        redacted_pdf_stream = redact_pdf(pdf_to_redact, text_list)
+                    
+                    if redacted_pdf_stream:
+                        display_pdf(redacted_pdf_stream, height=500)
+                        st.download_button(
+                            label="Download Redacted PDF",
+                            data=redacted_pdf_stream,
+                            file_name="redacted.pdf",
+                            mime="application/pdf"
+                        )
+                else:
+                    st.warning("Please enter at least one word or phrase to redact.")
